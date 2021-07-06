@@ -65,7 +65,6 @@ class Blockchain {
         let self = this;
         return new Promise(async (resolve, reject) => {
             try{
-                block.hash = SHA256(block.body).toString();
                 block.time = new Date().getTime().toString().slice(0,-3);
                 if (self.chain.length){
                     const lastBlock = self.chain[self.chain.length - 1];
@@ -73,7 +72,13 @@ class Blockchain {
                 }
                 self.height = self.height + 1;
                 block.height = self.height;
+                block.hash = SHA256(JSON.stringify(block)).toString();
                 self.chain.push(block)
+                const errLogs = self.validateChain()
+                if (errLogs.length > 0 ){
+                    reject(errLogs)
+                    return
+                }
                 resolve(block)
             }catch(err){
                 console.log(err)
@@ -121,13 +126,13 @@ class Blockchain {
                 let currentTime = parseInt(new Date().getTime().toString().slice(0, -3));
                 if ( (currentTime - time) >= 5 * 60  ){
                     reject("More than 5 minutes")
+                    return;
                 }
-                console.log(message)
-                console.log(address)
-                console.log(signature)
                 const verified = bitcoinMessage.verify(message,address,signature)
-                console.log(verified)
-                if (!verified) reject("Invalid signature")
+                if (!verified){
+                    reject("Invalid signature")
+                    return
+                }
                 const block = new BlockClass.Block({
                     address,
                     star
@@ -151,7 +156,7 @@ class Blockchain {
     getBlockByHash(hash) {
         let self = this;
         return new Promise((resolve, reject) => {
-           resolve(self.chain.filter(({hash:blockHash}) => blockHash === hash )[0])
+           resolve(self.chain.find(({hash:blockHash}) => blockHash === hash ))
         });
     }
 
@@ -202,9 +207,10 @@ class Blockchain {
         let self = this;
         let errorLog = [];
         let previousBlockHash = null;
-        return new Promise(async (resolve, reject) => {
-            self.chain.forEach(block => {
-                if (!block.validate()) errorLog.push(`block: ${block.height}, hash not validated`)
+        return new Promise((resolve, reject) => {
+            self.chain.forEach(async block => {
+                const valid = await block.validate();
+                if (!valid) errorLog.push(`block: ${block.height}, hash not validated`)
                 if (block.previousBlockHash !== previousBlockHash) errorLog.push(`block: ${block.height}, previousBlockHash not match`)
                 previousBlockHash = block.hash;
             })
